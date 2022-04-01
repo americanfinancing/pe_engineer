@@ -1,0 +1,6 @@
+build-essential
+gnupg2
+curl
+less
+git
+postgresql-client
