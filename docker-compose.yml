@@ -1,0 +1,100 @@
+version: '3.0'
+
+x-rails-api: &rails_api
+  build:
+    context: ./api
+    args:
+      RUBY_VERSION: '3.0.2'
+      BUNDLER_VERSION: '2.2.22'
+  environment: &rails_env
+    RAILS_ENV: ${RAILS_ENV:-development}
+    DATABASE_URL: postgres://postgres:postgres@postgres:5432
+    HISTFILE: /opt/app/log/.bash_history
+    PSQL_HISTFILE: /opt/app/log/.psql_history
+    EDITOR: vi
+    LOG: ${LOG:-0}
+  depends_on:
+    postgres:
+      condition: service_healthy
+  image: rails_api:1.0.0
+  tmpfs:
+    - /tmp
+  stdin_open: true
+  tty: true
+  volumes:
+    - ./api:/opt/app
+    - rails_cache:/opt/app/tmp/cache
+    - bundle:/usr/local/bundle
+
+x-frontend: &frontend
+  build:
+    context: ./client
+    args:
+      NODE_VERSION: '16'
+  image: ionic_client:0.0.1
+  volumes:
+    - ./client:/opt/app
+    - node_modules:/opt/app/node_modules
+
+services:
+  rails:
+    <<: *rails_api
+    command: bash -c "
+      rm -f /opt/app/tmp/pids/server.pid &&
+      bundle exec rails server -b 0.0.0.0"
+    ports:
+      - '3000:3000'
+
+  runner:
+    <<: *rails_api
+    command: /bin/bash
+
+  ionic:
+    <<: *frontend
+    command: ionic serve
+    user: 'node'
+    ports:
+      - '8100:8100'
+
+  frontend-runner:
+    <<: *frontend
+    command: /bin/bash
+    user: 'node'
+
+  backend-api:
+    build:
+      context: backend_api/.
+      args:
+        RUBY_VERSION: '2.7.2'
+        BUNDLER_VERSION: '2.1.2'
+    command: bundle exec rackup --host 0.0.0.0 -p 4567
+    ports:
+      - '4567:4567'
+    image: api:1.0.0
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./backend_api:/opt/app:cached
+      - api_bundle:/usr/local/bundle
+
+
+  postgres:
+    image: postgres:13.0
+    environment:
+      POSTGRES_PASSWORD: "postgres"
+      PSQL_HISTFILE: /root/log/.psql_history
+    volumes:
+      - ./log:/root/log:cached
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - 5432
+    healthcheck:
+      test: pg_isready -U postgres -h 127.0.0.1
+      interval: 5s
+
+volumes:
+  api_bundle:
+  bundle:
+  node_modules:
+  postgres:
+  rails_cache:
